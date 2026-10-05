@@ -84,11 +84,13 @@ router.post("/seed", async (req, res) => {
       return;
     }
 
+    const { name, phone, password } = req.body;
+
     const created = await prisma.owner.create({
       data: {
-        name: "Dono Stillus",
-        phone: "11999999999",
-        password: hashPassword("123456"),
+        name: name || "Dono Stillus",
+        phone: phone || "11999999999",
+        password: hashPassword(password || "123456"),
       },
     });
 
@@ -96,6 +98,45 @@ router.post("/seed", async (req, res) => {
     res.json({ message: "Dono padrão criado com sucesso", owner: ownerData });
   } catch (error: any) {
     res.status(500).json({ error: "Erro ao semear banco de dados", details: error.message });
+  }
+});
+
+// Validar token e retornar dados do usuário autenticado
+router.get("/me", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      res.status(401).json({ error: "Token não fornecido" });
+      return;
+    }
+
+    const parts = authHeader.split(" ");
+    if (parts.length !== 2 || !/^Bearer$/i.test(parts[0])) {
+      res.status(401).json({ error: "Token mal formatado" });
+      return;
+    }
+
+    const jwtSecret = process.env.JWT_SECRET || "default_secret";
+    const decoded: any = jwt.verify(parts[1], jwtSecret);
+
+    if (decoded.role === "owner") {
+      const owner = await prisma.owner.findUnique({ where: { id: decoded.id } });
+      if (!owner) {
+        res.status(401).json({ error: "Usuário não encontrado" });
+        return;
+      }
+      const { password: _, ...ownerData } = owner;
+      res.json({ user: ownerData, role: "owner" });
+    } else if (decoded.role === "client") {
+      res.json({
+        user: { name: decoded.name, phone: decoded.id },
+        role: "client",
+      });
+    } else {
+      res.status(401).json({ error: "Role desconhecida" });
+    }
+  } catch (error: any) {
+    res.status(401).json({ error: "Token inválido ou expirado" });
   }
 });
 
